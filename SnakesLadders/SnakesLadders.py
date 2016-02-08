@@ -1,75 +1,149 @@
+"""
+Finite State Machine for Snakes and Ladders game
 
+Kind character codes:
+    S = Snake, L = Ladder (aka Chute), B = Blank
+
+How to use:
+1. Make a game object with the number of board squares
+2. Create the links between state objects to define snakes or ladders
+3. Call game.make_state_kinds() to finish initializations
+4. Call game.run()
+5. Access game.records object to see results
+"""
 # coding: utf-8
-
-# ## Finite State Machine for Snakes and Ladders game
 
 import random
 
 class State(object):
     def __init__(self, ix):
+        """index is the position on the board for this state instance.
+        link is either None (normal blank location) or the index of a state connected
+        by a snake or a ladder.
+        """
         self.index = ix
-        self.link = None  # placeholder, not None if Snake or Ladder
+        self.link = ix  # placeholder, not = index if Snake or Ladder
+        self.kind = 'B'  # placeholder blank state (updated in first call to process)
+
+    def make_kind(self):
+        if self.link != self.index:
+            if self.link > self.index:
+                # ! this is inefficient because it gets re-updated every time
+                # this method is called!
+                self.kind = 'L'
+            else:
+                self.kind = 'S'
+        else:
+            # link is None: "Blank" = not a snake or ladder
+            self.kind = 'B'
 
     def process(self):
         """Action when landed upon"""
-        if self.link:
-            if self.link > self.index:
-                # Ladder!
-                return self.link
-            else:
-                # Snake!
-                return self.link
+        return self.link
+
+    def __repr__(self):
+        if self.kind == 'S':
+            s = ', Snake'
+        elif self.kind == 'L':
+            s = ', Ladder'
         else:
-            # link is None: "Normal" = not a snake or ladder
-            return self.index
+            s = ''
+        return "State({0}{1})".format(self.index, s)
 
 
 class GameFSM(object):
-    def __init__(self, n):
+    def __init__(self, n, max_counter_safeguard=5000):
+        # list of State objects for each position on the board
         self.all_states = []
-        self.position = 0
+        # current position of player on board
+        #self.position = 0
+        # size of board
         self.n = n
+        # make empty board states for each position
+        # (snake and ladder positions must be added later)
         for ix in range(n+1):
-            self.all_states.append(State(ix))
+            blank_state = State(ix)
+            self.all_states.append(blank_state)
+        # record of moves, die rolls, and snake/ladder use
+        #self.records = []
+        # Reset method takes care of position and records
+        self.reset()
+        self.max_counter_safeguard = max_counter_safeguard
 
-    def move(self, die):
+    def make_state_kinds(self):
+        """Must run this after creating the snakes and ladder links, before a game
+        """
+        for state in self.all_states:
+            state.make_kind()
+
+    def move_and_record(self, die):
         """die is an integer
         """
+        start_pos = self.position
         inter_pos = self.position + die
-        state_obj = self.all_states[inter_pos]
-        final_pos = state_obj.process()
+        try:
+            state_obj = self.all_states[inter_pos]
+        except IndexError:
+            # moved off the end of the board
+            kind = 'B'
+            final_pos = self.n
+        else:
+            final_pos = state_obj.process()
+            kind = state_obj.kind
         self.position = final_pos
         # all this could be written more consisely as
         #self.position = self.all_states[self.position+die].process()
+        record = {'start': start_pos,
+                  'die': die,
+                  'kind': kind,
+                  'end': self.position}
+        self.records.append(record)
+
+    def reset(self):
+        """Reset game state for a new game
+        """
+        self.counter = 0  # to stop (theoretically) infinite loops
+        self.position = 0
+        self.records = []
 
     def run(self):
-        print("Starting game!")
-        while self.position < self.n:
+        """
+        Run one whole game
+        """
+        self.reset()
+        #print("Starting game!")
+        while self.position < self.n \
+              and self.counter < self.max_counter_safeguard:
             # roll die
             die = rollDie()
-            # move based on die roll
-            self.move(die)
-            # record results
-        print("Game over!")
+            self.counter += 1
+            #print("Die={}".format(die))
+            # move based on die roll and record results
+            self.move_and_record(die)
+            #print("New position is {}".format(self.position))
+        #print("Game over!")
 
+# Find total number of moves from records
+def count_moves(records):
+    return len(records)
 
-# Global constant in caps
-DIE_SIDES = 4
+# Find number of snakes or ladders used in game
+def count_snakes_and_ladders(records):
+    """
+    records is a list of dictionaries keyed with 'kind', 'start', 'end', 'die'
+    Returns a pair (s, l) of counts of landing on any snake or ladder
+    """
+    tot_s = 0
+    tot_l = 0
+    for rec in records:
+        if rec['kind'] == 'S':
+            tot_s = tot_s + 1
+        elif rec['kind'] == 'L':
+            tot_l = tot_l + 1
+    return tot_s, tot_l
 
 def rollDie():
     return random.randint(1, DIE_SIDES)
 
-game = GameFSM(16)
-
-
-# Ladders
-game.all_states[2].link = 10
-game.all_states[8].link = 14
-
-
-# Snakes
-game.all_states[11].link = 4
-game.all_states[15].links = 6
-
-print(game.all_states)
-
+# Global constant in caps
+DIE_SIDES = 4
